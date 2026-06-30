@@ -1,0 +1,36 @@
+{% assign showcase = site.data.pdf_documents[page.render_key] %}
+<!doctype html>
+<html lang="{{ site.lang | default: 'en' }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page.title }}{% if site.title %} | {{ site.title }}{% endif %}</title>
+    <meta name="description" content="{{ page.description | default: site.description }}">
+    <meta name="theme-color" content="#f4f0e8">
+    <link rel="stylesheet" href="{{ '/assets/css/site.css' | relative_url }}">
+  </head>
+  <body class="pdf-viewer-body">
+    <main class="pdf-viewer" aria-label="{{ page.section }} {{ showcase.title }} PDF">
+      <header class="pdf-viewer__header">
+        <a class="pdf-viewer__home" href="{{ '/' | relative_url }}">Yass</a>
+        <p class="pdf-viewer__section">{{ page.section }}</p>
+        <h1>{{ showcase.title }}</h1>
+        <a class="pdf-viewer__pdf-link" href="{{ showcase.pdf | relative_url }}">Open original PDF</a>
+      </header>
+
+      <section class="pdf-pages" aria-label="{{ showcase.title }} pages">
+        {% for image in showcase.pages %}
+          <figure class="pdf-page">
+            <img
+              src="{{ image | relative_url }}"
+              alt="{{ showcase.title }} page {{ forloop.index }}"
+              width="1920"
+              height="1080"
+              loading="{% if forloop.first %}eager{% else %}lazy{% endif %}"
+              decoding="async">
+          </figure>
+        {% endfor %}
+      </section>
+    </main>
+  </body>
+</html>

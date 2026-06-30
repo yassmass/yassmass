@@ -1,0 +1,13 @@
+title: Yass
+description: AI automation, agentic systems, and product systems.
+url: "https://yassmass.com"
+baseurl: ""
+lang: en
+markdown: kramdown
+permalink: pretty
+exclude:
+  - .bundle/
+  - bin/
+  - Gemfile
+  - Gemfile.lock
+  - vendor/

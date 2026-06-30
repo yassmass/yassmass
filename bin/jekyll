@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export BUNDLE_APP_CONFIG="${BUNDLE_APP_CONFIG:-.bundle}"
+export BUNDLE_PATH="${BUNDLE_PATH:-vendor/bundle}"
+export BUNDLE_USER_HOME="${BUNDLE_USER_HOME:-.bundle/home}"
+
+BUNDLE_BIN="/opt/homebrew/opt/ruby@3.3/bin/bundle"
+if [ ! -x "$BUNDLE_BIN" ]; then
+  BUNDLE_BIN="bundle"
+fi
+
+if [ "$#" -eq 0 ]; then
+  set -- build
+fi
+
+case "$1" in
+  build|serve)
+    ruby bin/render-pdfs
+    ;;
+esac
+
+exec "$BUNDLE_BIN" exec jekyll "$@"

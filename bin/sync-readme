@@ -1,0 +1,32 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+SOURCE = "index.md"
+TARGET = "README.md"
+HEADER = "<!-- Generated from index.md by bin/sync-readme. Do not edit README.md directly. -->"
+
+def homepage_markdown
+  content = File.read(SOURCE, encoding: "UTF-8")
+  content = content.sub(/\A---\n.*?\n---\n/m, "")
+  lines = content.lines
+    .reject { |line| line.match?(/\A\{:\s+\.[^}]+\}\s*\z/) }
+    .map { |line| line.sub(/[ \t]*\{:\s+\.[^}]+\}[ \t]*$/, "") }
+  body = lines.join.strip
+  "#{HEADER}\n\n#{body}\n"
+end
+
+expected = homepage_markdown
+
+if ARGV.include?("--check")
+  actual = File.exist?(TARGET) ? File.read(TARGET, encoding: "UTF-8") : nil
+  if actual == expected
+    puts "#{TARGET} is in sync with #{SOURCE}"
+    exit 0
+  end
+
+  warn "#{TARGET} is not in sync with #{SOURCE}. Run `ruby #{__FILE__}` and commit the result."
+  exit 1
+end
+
+File.write(TARGET, expected, encoding: "UTF-8")
+puts "Wrote #{TARGET} from #{SOURCE}"
