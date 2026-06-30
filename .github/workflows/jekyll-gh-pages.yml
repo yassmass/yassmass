@@ -32,6 +32,8 @@ jobs:
         uses: actions/configure-pages@v5
       - name: Install PDF rendering tools
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - name: Install PDF annotation tools
+        run: python3 -m pip install pypdf
       - name: Render PDF pages
         run: ruby bin/render-pdfs
       - name: Check profile README sync

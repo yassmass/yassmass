@@ -185,6 +185,7 @@ a:focus-visible {
 }
 
 .pdf-page {
+  position: relative;
   width: 100%;
   margin: 0;
   aspect-ratio: 16 / 9;
@@ -199,6 +200,20 @@ a:focus-visible {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.pdf-link-overlay {
+  position: absolute;
+  z-index: 2;
+  display: block;
+  min-width: 0.5rem;
+  min-height: 0.5rem;
+  background: transparent;
+}
+
+.pdf-link-overlay:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 0.15rem;
 }
 
 @media (max-width: 44rem) {

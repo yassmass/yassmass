@@ -19,15 +19,24 @@
       </header>
 
       <section class="pdf-pages" aria-label="{{ showcase.title }} pages">
-        {% for image in showcase.pages %}
+        {% for pdf_page in showcase.pages %}
           <figure class="pdf-page">
             <img
-              src="{{ image | relative_url }}"
+              src="{{ pdf_page.image | relative_url }}"
               alt="{{ showcase.title }} page {{ forloop.index }}"
               width="1920"
               height="1080"
               loading="{% if forloop.first %}eager{% else %}lazy{% endif %}"
               decoding="async">
+            {% for link in pdf_page.links %}
+              <a
+                class="pdf-link-overlay"
+                href="{{ link.href }}"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Open linked resource from {{ showcase.title }} page {{ forloop.parentloop.index }}"
+                style="left: {{ link.left }}%; top: {{ link.top }}%; width: {{ link.width }}%; height: {{ link.height }}%;"></a>
+            {% endfor %}
           </figure>
         {% endfor %}
       </section>

@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "json"
 require "open3"
 require "pathname"
 require "tmpdir"
@@ -27,6 +28,25 @@ end
 PDFINFO = ENV["PDFINFO"] || command_path("pdfinfo")
 PDFTOPPM = ENV["PDFTOPPM"] || command_path("pdftoppm")
 
+def python_with_pypdf
+  candidates = []
+  candidates << ENV["PDF_LINK_PYTHON"] if ENV["PDF_LINK_PYTHON"]
+  candidates << ROOT.join(".venv/bin/python3").to_s
+  candidates << (command_path("python3") rescue nil)
+  candidates.concat(Dir["/Users/*/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"])
+
+  candidates.compact.uniq.each do |candidate|
+    next unless File.executable?(candidate)
+
+    _, _, status = Open3.capture3(candidate, "-c", "import pypdf")
+    return candidate if status.success?
+  end
+
+  abort "Missing Python dependency: pypdf. Install it with `python3 -m pip install pypdf` or set PDF_LINK_PYTHON."
+end
+
+PYTHON = python_with_pypdf
+
 def relative_asset_path(path)
   "/" + Pathname.new(path).relative_path_from(ROOT).to_s
 end
@@ -48,6 +68,101 @@ def pdf_page_count(pdf_path)
   abort "Could not determine page count for #{pdf_path}" unless pages
 
   pages.to_i
+end
+
+def pdf_link_annotations(pdf_path)
+  extractor = <<~'PY'
+    import json
+    import sys
+    from pypdf import PdfReader
+
+    reader = PdfReader(sys.argv[1])
+    pages = []
+
+    for page_index, page in enumerate(reader.pages, start=1):
+        media_box = page.mediabox
+        page_width = float(media_box.width)
+        page_height = float(media_box.height)
+        raw_links = []
+
+        for annot_ref in page.get("/Annots") or []:
+            annot = annot_ref.get_object()
+            if annot.get("/Subtype") != "/Link":
+                continue
+
+            action = annot.get("/A")
+            if action and hasattr(action, "get_object"):
+                action = action.get_object()
+
+            href = action.get("/URI") if action else None
+            rect = annot.get("/Rect")
+            if not href or not rect:
+                continue
+
+            x1, y1, x2, y2 = [float(value) for value in rect]
+            left = min(x1, x2) / page_width * 100
+            right = max(x1, x2) / page_width * 100
+            top = (1 - (max(y1, y2) / page_height)) * 100
+            bottom = (1 - (min(y1, y2) / page_height)) * 100
+            width = right - left
+            height = bottom - top
+
+            if width <= 0 or height <= 0:
+                continue
+
+            raw_links.append({
+                "href": str(href),
+                "left": round(left, 4),
+                "top": round(top, 4),
+                "width": round(width, 4),
+                "height": round(height, 4),
+            })
+
+        def right(box):
+            return box["left"] + box["width"]
+
+        def bottom(box):
+            return box["top"] + box["height"]
+
+        def touches(a, b, margin=1.0):
+            return not (
+                right(a) + margin < b["left"]
+                or right(b) + margin < a["left"]
+                or bottom(a) + margin < b["top"]
+                or bottom(b) + margin < a["top"]
+            )
+
+        def merge(a, b):
+            left = min(a["left"], b["left"])
+            top = min(a["top"], b["top"])
+            merged_right = max(right(a), right(b))
+            merged_bottom = max(bottom(a), bottom(b))
+            return {
+                "href": a["href"],
+                "left": round(left, 4),
+                "top": round(top, 4),
+                "width": round(merged_right - left, 4),
+                "height": round(merged_bottom - top, 4),
+            }
+
+        links = []
+        for raw_link in raw_links:
+            for index, existing in enumerate(links):
+                if existing["href"] == raw_link["href"] and touches(existing, raw_link):
+                    links[index] = merge(existing, raw_link)
+                    break
+            else:
+                links.append(raw_link)
+
+        pages.append({"page": page_index, "links": links})
+
+    print(json.dumps(pages))
+  PY
+
+  stdout, stderr, status = Open3.capture3(PYTHON, "-c", extractor, pdf_path.to_s)
+  abort "PDF annotation extraction failed for #{pdf_path}:\n#{stderr}" unless status.success?
+
+  JSON.parse(stdout)
 end
 
 def render_pdf(pdf_path, target_dir, expected_pages)
@@ -115,6 +230,7 @@ def showcase_pages
       key: render_key,
       title: data["document_title"] || data["title"],
       section: data["section"],
+      require_links: data["require_links"] == true,
       pdf_path: pdf_path,
       pdf_url: relative_asset_path(pdf_path)
     }
@@ -138,6 +254,7 @@ FileUtils.mkdir_p(DATA_PATH.dirname)
 manifest = {}
 page_count_cache = {}
 render_cache = {}
+link_cache = {}
 tmp_dirs = []
 
 at_exit do
@@ -147,6 +264,7 @@ end
 routes.each do |route|
   pdf_key = route[:pdf_path].to_s
   page_count_cache[pdf_key] ||= pdf_page_count(route[:pdf_path])
+  link_cache[pdf_key] ||= pdf_link_annotations(route[:pdf_path])
 
   unless render_cache[pdf_key]
     tmp_dir = Pathname.new(Dir.mktmpdir("pdf-render-"))
@@ -156,13 +274,26 @@ routes.each do |route|
 
   target_dir = RENDER_ROOT.join(route[:key])
   rendered_pages = copy_rendered_pages(render_cache[pdf_key], target_dir)
+  page_links = link_cache[pdf_key]
+  abort "Link page count mismatch for #{route[:pdf_path]}" unless page_links.length == rendered_pages.length
 
   manifest[route[:key]] = {
     "title" => route[:title],
     "section" => route[:section],
     "pdf" => route[:pdf_url],
-    "pages" => rendered_pages.map { |page| relative_asset_path(page) }
+    "pages" => rendered_pages.each_with_index.map do |page, index|
+      {
+        "image" => relative_asset_path(page),
+        "links" => page_links[index].fetch("links").map(&:dup)
+      }
+    end
   }
+
+  link_count = manifest[route[:key]]["pages"].sum { |page| page.fetch("links").length }
+  if link_count.zero?
+    message = "No link annotations found for #{route[:key]} (#{route[:pdf_url]})"
+    route[:require_links] ? abort(message) : warn("Warning: #{message}")
+  end
 end
 
 referenced_pdfs = routes.map { |route| route[:pdf_path].to_s }.uniq
