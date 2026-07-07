@@ -4,6 +4,7 @@
 SOURCE = "index.md"
 TARGET = "README.md"
 HEADER = "<!-- Generated from index.md by bin/sync-readme. Do not edit README.md directly. -->"
+README_IMAGE_WIDTH = 360
 
 def homepage_markdown
   content = File.read(SOURCE, encoding: "UTF-8")
@@ -11,6 +12,11 @@ def homepage_markdown
   lines = content.lines
     .reject { |line| line.match?(/\A\{:\s+\.[^}]+\}\s*\z/) }
     .map { |line| line.sub(/[ \t]*\{:\s+\.[^}]+\}[ \t]*$/, "") }
+    .map do |line|
+      line.sub(/\A!\[([^\]]+)\]\((assets\/images\/yassmass\.png)\)\s*\z/) do
+        %(<img src="#{Regexp.last_match(2)}" alt="#{Regexp.last_match(1)}" width="#{README_IMAGE_WIDTH}">\n)
+      end
+    end
   body = lines.join.strip
   "#{HEADER}\n\n#{body}\n"
 end

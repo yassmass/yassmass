@@ -40,7 +40,7 @@ body {
 .portrait {
   display: block;
   width: min(100%, 24rem);
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 1 / 1;
   margin: 0 0 clamp(2rem, 5vw, 4.25rem) auto;
   object-fit: cover;
   object-position: center top;
