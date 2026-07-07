@@ -1,0 +1,143 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "fileutils"
+require "open3"
+require "pathname"
+require "tmpdir"
+require "timeout"
+
+ROOT = Pathname.new(File.expand_path("..", __dir__))
+ORIGINALS_DIR = Pathname.new(ENV.fetch("SHOWCASE_ORIGINALS_DIR", "/Users/Workspaces/Jobs/originals"))
+PPTX_DIR = ROOT.join("assets/pptx")
+PDF_DIR = ROOT.join("assets/pdfs")
+
+ROUTES = [
+  {
+    section: "applications",
+    family: "ai_applications_solutions",
+    pattern: "credentials-*.pptx"
+  },
+  {
+    section: "automation",
+    family: "ai_automation_workflow",
+    pattern: "credentials-*.pptx"
+  },
+  {
+    section: "consultancy",
+    family: "ai_digital_transformation_consulting",
+    pattern: "credentials-*.pptx"
+  },
+  {
+    section: "product",
+    family: "product_ai_product",
+    pattern: "credentials-*.pptx"
+  }
+].freeze
+
+def command_path(name)
+  ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
+    path = File.join(dir, name)
+    return path if File.executable?(path) && !File.directory?(path)
+  end
+
+  abort "Missing required command: #{name}"
+end
+
+SOFFICE = ENV["SOFFICE"] || command_path("soffice")
+
+def latest_file(paths)
+  paths.max_by { |path| [File.mtime(path), path.to_s] }
+end
+
+def copy_latest_pptx(route)
+  source_dir = ORIGINALS_DIR.join(route.fetch(:family))
+  candidates = Dir[source_dir.join(route.fetch(:pattern))].map { |path| Pathname.new(path) }
+  abort "No PPTX files found in #{source_dir}" if candidates.empty?
+
+  source = latest_file(candidates)
+  target_dir = PPTX_DIR.join(route.fetch(:section))
+  FileUtils.rm_rf(target_dir)
+  FileUtils.mkdir_p(target_dir)
+
+  target = target_dir.join(source.basename)
+  FileUtils.cp(source, target)
+  target
+end
+
+def committed_pptx(route)
+  target_dir = PPTX_DIR.join(route.fetch(:section))
+  candidates = Dir[target_dir.join("*.pptx")].map { |path| Pathname.new(path) }
+  abort "No committed PPTX found in #{target_dir}. Run locally with SHOWCASE_ORIGINALS_DIR available." if candidates.empty?
+  abort "Expected exactly one committed PPTX in #{target_dir}, found #{candidates.length}" unless candidates.length == 1
+
+  candidates.first
+end
+
+def convert_to_pdf(pptx_path, pdf_path)
+  FileUtils.mkdir_p(pdf_path.dirname)
+  FileUtils.rm_f(pdf_path)
+
+  Dir.mktmpdir("showcase-libreoffice-") do |tmp|
+    tmp_path = Pathname.new(tmp)
+    out_dir = tmp_path.join("out")
+    profile_dir = tmp_path.join("profile")
+    home_dir = tmp_path.join("home")
+    cache_dir = tmp_path.join("cache")
+    FileUtils.mkdir_p([out_dir, profile_dir, home_dir, cache_dir])
+
+    env = {
+      "HOME" => home_dir.to_s,
+      "XDG_CACHE_HOME" => cache_dir.to_s
+    }
+
+    command = [
+      SOFFICE,
+      "--headless",
+      "-env:UserInstallation=file://#{profile_dir}",
+      "--convert-to",
+      "pdf",
+      "--outdir",
+      out_dir.to_s,
+      pptx_path.to_s
+    ]
+
+    stdout = +""
+    stderr = +""
+    status = nil
+    begin
+      Timeout.timeout(120) do
+        stdout, stderr, status = Open3.capture3(env, *command)
+      end
+    rescue Timeout::Error
+      abort "LibreOffice conversion timed out for #{pptx_path}"
+    end
+
+    unless status.success?
+      abort "LibreOffice conversion failed for #{pptx_path}\nSTDOUT:\n#{stdout}\nSTDERR:\n#{stderr}"
+    end
+
+    generated_pdf = out_dir.join("#{pptx_path.basename(pptx_path.extname)}.pdf")
+    abort "LibreOffice did not create expected PDF: #{generated_pdf}" unless generated_pdf.file?
+    abort "Generated PDF is empty: #{generated_pdf}" unless File.size(generated_pdf).positive?
+
+    FileUtils.cp(generated_pdf, pdf_path)
+  end
+
+  abort "PDF copy failed: #{pdf_path}" unless pdf_path.file? && File.size(pdf_path).positive?
+end
+
+source_available = ORIGINALS_DIR.directory?
+puts source_available ? "Refreshing PPTX from #{ORIGINALS_DIR}" : "Using committed PPTX assets from #{PPTX_DIR}"
+
+FileUtils.rm_rf(PDF_DIR)
+FileUtils.mkdir_p(PDF_DIR)
+
+ROUTES.each do |route|
+  pptx = source_available ? copy_latest_pptx(route) : committed_pptx(route)
+  pdf = PDF_DIR.join(route.fetch(:section), "#{pptx.basename(pptx.extname)}.pdf")
+  convert_to_pdf(pptx, pdf)
+  puts "#{route.fetch(:section)}: #{pptx.relative_path_from(ROOT)} -> #{pdf.relative_path_from(ROOT)}"
+end
+
+puts "Prepared #{ROUTES.length} showcase PPTX/PDF asset set(s)"

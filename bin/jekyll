@@ -18,6 +18,7 @@ fi
 
 case "$1" in
   build|serve)
+    ruby bin/prepare-showcase-assets
     ruby bin/render-pdfs
     ;;
 esac

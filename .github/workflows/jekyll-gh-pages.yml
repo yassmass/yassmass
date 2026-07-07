@@ -30,10 +30,12 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Pages
         uses: actions/configure-pages@v5
-      - name: Install PDF rendering tools
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - name: Install document rendering tools
+        run: sudo apt-get update && sudo apt-get install -y libreoffice poppler-utils
       - name: Install PDF annotation tools
         run: python3 -m pip install pypdf
+      - name: Prepare showcase PDFs
+        run: ruby bin/prepare-showcase-assets
       - name: Render PDF pages
         run: ruby bin/render-pdfs
       - name: Check profile README sync

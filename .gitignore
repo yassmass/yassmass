@@ -1,6 +1,7 @@
 .DS_Store
 **/.DS_Store
 _data/pdf_documents.yml
+assets/pdfs/
 assets/pdf-renders/
 .bundle/
 vendor/bundle/
