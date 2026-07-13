@@ -7,6 +7,12 @@ export BUNDLE_APP_CONFIG="${BUNDLE_APP_CONFIG:-.bundle}"
 export BUNDLE_PATH="${BUNDLE_PATH:-vendor/bundle}"
 export BUNDLE_USER_HOME="${BUNDLE_USER_HOME:-.bundle/home}"
 
+CODEX_DEPS="${CODEX_RUNTIME_DEPS:-${HOME}/.cache/codex-runtimes/codex-primary-runtime/dependencies}"
+if [ -d "$CODEX_DEPS" ]; then
+  export PATH="$CODEX_DEPS/bin/override:$CODEX_DEPS/bin/fallback:$PATH"
+  export PDF_LINK_PYTHON="${PDF_LINK_PYTHON:-$CODEX_DEPS/python/bin/python3}"
+fi
+
 BUNDLE_BIN="/opt/homebrew/opt/ruby@3.3/bin/bundle"
 if [ ! -x "$BUNDLE_BIN" ]; then
   BUNDLE_BIN="bundle"
